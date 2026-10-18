@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { useRouter } from 'next/navigation';
 import {
   Box,
   Typography,
@@ -9,6 +10,8 @@ import {
   ListItemIcon,
   ListItemText,
   Divider,
+  Button,
+  Avatar,
 } from '@mui/material';
 import EmergencyIcon from '@mui/icons-material/Emergency';
 import AssignmentTurnedInOutlinedIcon from '@mui/icons-material/AssignmentTurnedInOutlined';
@@ -16,22 +19,30 @@ import TimelineOutlinedIcon from '@mui/icons-material/TimelineOutlined';
 import BarChartOutlinedIcon from '@mui/icons-material/BarChartOutlined';
 import ShieldOutlinedIcon from '@mui/icons-material/ShieldOutlined';
 import GppGoodOutlinedIcon from '@mui/icons-material/GppGoodOutlined';
+import LogoutIcon from '@mui/icons-material/Logout';
+import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+import { User } from '../services/auth';
 
 interface SidebarProps {
   currentNav?: string;
   onSelectNav?: (nav: string) => void;
+  user?: User | null;
+  onLogout?: () => void;
+  useRouter?: any;
 }
 
 export default function Sidebar({
   currentNav = 'Clinical Triage',
   onSelectNav,
+  user,
+  onLogout,
 }: SidebarProps) {
+  const router = useRouter();
+
   const navItems = [
-    { label: 'Clinical Triage', icon: <EmergencyIcon /> },
-    { label: 'Patient Discharge', icon: <AssignmentTurnedInOutlinedIcon /> },
-    { label: 'Diagnostic Registry', icon: <TimelineOutlinedIcon /> },
-    { label: 'Discharge Analytics', icon: <BarChartOutlinedIcon /> },
-    { label: 'Audit & Compliance', icon: <ShieldOutlinedIcon /> },
+    { label: 'Clinical Triage', icon: <EmergencyIcon />, path: '/clinical-triage' },
+    { label: 'Patient Discharge', icon: <AssignmentTurnedInOutlinedIcon />, path: '/patient' },
+    { label: 'Doctor Admin', icon: <CloudUploadIcon />, path: '/doctor', doctorOnly: true },
   ];
 
   return (
@@ -104,12 +115,14 @@ export default function Sidebar({
       {/* Navigation List */}
       <Box sx={{ px: 1.5, py: 1, flex: 1 }}>
         <List sx={{ display: 'flex', flexDirection: 'column', gap: 0.6 }}>
-          {navItems.map((item) => {
+          {navItems
+            .filter(item => !item.doctorOnly || user?.role === 'DOCTOR')
+            .map((item) => {
             const isActive = currentNav === item.label;
             return (
               <ListItemButton
                 key={item.label}
-                onClick={() => onSelectNav?.(item.label)}
+                onClick={() => router.push(item.path)}
                 sx={{
                   borderRadius: '8px',
                   py: 1,
@@ -184,6 +197,62 @@ export default function Sidebar({
           </Typography>
         </Box>
       </Box>
+
+      {/* User Profile & Logout */}
+      <Divider sx={{ borderColor: '#f1f5f9' }} />
+      {user && (
+        <Box
+          sx={{
+            p: 2,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 1.5,
+            backgroundColor: '#f8fafc',
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Avatar sx={{ width: 32, height: 32, bgcolor: '#0284c7' }}>
+              {user.name.charAt(0)}
+            </Avatar>
+            <Box sx={{ flex: 1, overflow: 'hidden' }}>
+              <Typography
+                variant="body2"
+                sx={{
+                  fontWeight: 600,
+                  fontSize: '0.8rem',
+                  color: '#0f172a',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                {user.name}
+              </Typography>
+              <Typography
+                variant="caption"
+                sx={{
+                  color: '#64748b',
+                  fontSize: '0.7rem',
+                }}
+              >
+                {user.role === 'DOCTOR' ? user.department : user.mrn}
+              </Typography>
+            </Box>
+          </Box>
+          <Button
+            onClick={onLogout}
+            startIcon={<LogoutIcon />}
+            size="small"
+            sx={{
+              color: '#64748b',
+              justifyContent: 'flex-start',
+              textTransform: 'none',
+            }}
+          >
+            Logout
+          </Button>
+        </Box>
+      )}
     </Box>
   );
 }

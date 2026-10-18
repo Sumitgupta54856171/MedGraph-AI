@@ -31,6 +31,7 @@ import { cleanOutput, parseClinicalAnalysis } from '../utils/cleanOutput';
 interface Column2Props {
   analysisData: AnalyzeResponse | null;
   isPhysicianApproved: boolean;
+  isDoctor: boolean;
   onApprove: () => void;
   onEdit: () => void;
   onReject: () => void;
@@ -40,6 +41,7 @@ interface Column2Props {
 export default function Column2SafetyGate({
   analysisData,
   isPhysicianApproved,
+  isDoctor,
   onApprove,
   onEdit,
   onReject,
@@ -842,23 +844,25 @@ export default function Column2SafetyGate({
         </Box>
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
-          <Button
-            size="small"
-            variant="contained"
-            onClick={onApprove}
-            startIcon={<CheckIcon sx={{ fontSize: 14 }} />}
-            sx={{
-              backgroundColor: isPhysicianApproved ? '#047857' : '#0f766e',
-              color: '#ffffff',
-              fontSize: '0.74rem',
-              fontWeight: 700,
-              py: 0.5,
-              px: 1.2,
-              '&:hover': { backgroundColor: '#115e59' },
-            }}
-          >
-            {isPhysicianApproved ? 'Approved' : 'Approve'}
-          </Button>
+          {isDoctor && (
+            <Button
+              size="small"
+              variant="contained"
+              onClick={onApprove}
+              startIcon={<CheckIcon sx={{ fontSize: 14 }} />}
+              sx={{
+                backgroundColor: isPhysicianApproved ? '#047857' : '#0f766e',
+                color: '#ffffff',
+                fontSize: '0.74rem',
+                fontWeight: 700,
+                py: 0.5,
+                px: 1.2,
+                '&:hover': { backgroundColor: '#115e59' },
+              }}
+            >
+              {isPhysicianApproved ? 'Approved' : 'Approve & Sign-Off'}
+            </Button>
+          )}
           <Button
             size="small"
             variant="outlined"

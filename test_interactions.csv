@@ -1,0 +1,6 @@
+drug1,drug2,pathway,risk,severity,safe_alternative,specialist_name,specialist_dept
+Warfarin,Aspirin,Dual Hemostatic Inhibition (VKORC1 + COX-1),Major Systemic Hemorrhage,CRITICAL,Acetaminophen or Low-Dose Aspirin 81mg + Pantoprazole,"Dr. Sarah Jenkins, MD",Cardiology
+Lisinopril,Ibuprofen,Efferent Arteriole Constriction + K+ Retention,Severe Hyperkalemia & AKI,CRITICAL,Hold Ibuprofen & Monitor K+ + Creatinine,"Dr. Rajeev Menon, MD",Nephrology
+Spironolactone,Ibuprofen,Efferent Arteriole Constriction + K+ Retention,Severe Hyperkalemia & AKI,CRITICAL,Hold Ibuprofen & Monitor K+ + Creatinine,"Dr. Rajeev Menon, MD",Nephrology
+Metformin,Furosemide,RAAS Overactivation + Volume Depletion,Hypotensive Crisis,HIGH,Reduce dose and monitor blood pressure,"Dr. Emily Chen, MD",Endocrinology
+Digoxin,Furosemide,Electrolyte Imbalance,Torsades de Pointes,HIGH,Monitor serum potassium and magnesium,"Dr. Sarah Jenkins, MD",Cardiology

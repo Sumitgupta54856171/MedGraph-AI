@@ -2,12 +2,18 @@ import os
 import time
 from typing import List, Optional
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from agents.agent_graph import medgraph_workflow, graph
+from routers import auth, encounters, doctor_admin
+from database import engine, Base
+from ingestion_agents import run_ontology_ingestion_pipeline
 
 load_dotenv()
+
+# Create database tables on startup
+Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="MedGraph Clinical AI - AMD ROCm Backend",
@@ -22,6 +28,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include routers
+app.include_router(auth.router)
+app.include_router(encounters.router)
+app.include_router(doctor_admin.router)
 
 AMD_API_KEY = os.getenv("AMD_API_KEY")
 AMD_BASE_URL = os.getenv("AMD_BASE_URL")
@@ -67,7 +78,9 @@ async def execute_analysis_api(req: EncounterInput):
             "raw_clinical_notes": req.clinical_notes,
             "target_language": req.target_language,
             "autonomous_floor": req.autonomous_floor,
+            "patient_mrn": None,
             "sanitized_notes": "",
+            "extracted_entities": {},
             "graph_paths": [],
             "llm_analysis": None,
             "requires_physician_lock": False,
@@ -85,6 +98,7 @@ async def execute_analysis_api(req: EncounterInput):
                 "graph_database": "FalkorDB medgraph_hospital_brain"
             },
             "sanitized_notes": final_state["sanitized_notes"],
+            "extracted_entities": final_state.get("extracted_entities", {}),
             "graph_paths": final_state["graph_paths"],
             "clinical_analysis": final_state["llm_analysis"],
             "requires_physician_lock": final_state["requires_physician_lock"]
@@ -127,3 +141,43 @@ async def physician_sign_off(req: SignOffInput):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Audit writeback error: {str(e)}")
+
+
+@app.post("/api/ontology/ingest")
+async def ingest_ontology_file(file: UploadFile = File(...)):
+    """
+    Dual-agent ingestion endpoint for PDF/CSV knowledge loading into FalkorDB.
+
+    Accepts CSV or PDF files containing drug-drug interaction data.
+    Processes through:
+    1. Data Mapping Agent (extracts and normalizes entities)
+    2. Database Graph Agent (executes Cypher MERGE queries in FalkorDB)
+
+    Returns combined output from both agents.
+    """
+    if not os.getenv("AMD_API_KEY"):
+        raise HTTPException(status_code=500, detail="Missing AMD_API_KEY in backend .env")
+
+    # Validate file type
+    if not file.filename.lower().endswith(('.csv', '.pdf')):
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported file type. Only CSV and PDF files are supported."
+        )
+
+    try:
+        # Read file content
+        file_bytes = await file.read()
+
+        # Run the dual-agent pipeline
+        result = await run_ontology_ingestion_pipeline(file_bytes, file.filename)
+
+        return {
+            "status": "success",
+            "message": f"Successfully ingested {result['total_entities']} entities from {file.filename}",
+            "pipeline_result": result
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ingestion pipeline error: {str(e)}")
