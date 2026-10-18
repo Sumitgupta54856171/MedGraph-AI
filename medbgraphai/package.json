@@ -9,6 +9,8 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@copilotkit/react-core": "^1.79.1",
+    "@copilotkit/react-ui": "^1.79.1",
     "@emotion/cache": "^11.14.0",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",

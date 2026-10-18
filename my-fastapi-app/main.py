@@ -1,16 +1,11 @@
 import os
-from turtle import st
-
-
-from fastapi import FastAPI,HTTPException
 import time
+from typing import List, Optional
 from dotenv import load_dotenv
-from typing import List,Optional
-from fastapi.middleware.cors import  CORSMiddleware
-from pydantic import  BaseModel,Field
-from openai import  AsyncOpenAI
-from agents.agent_graph import medgraph_workflow
-
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+from agents.agent_graph import medgraph_workflow, graph
 
 load_dotenv()
 
@@ -28,7 +23,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-AMD_API_KEY= os.getenv("AMD_API_KEY")
+AMD_API_KEY = os.getenv("AMD_API_KEY")
 AMD_BASE_URL = os.getenv("AMD_BASE_URL")
 
 class EncounterInput(BaseModel):
@@ -36,9 +31,15 @@ class EncounterInput(BaseModel):
     target_language: str = Field(default="English")
     autonomous_floor: int = Field(default=80)
 
+class SignOffInput(BaseModel):
+    doctor_name: str = Field(default="Dr. Sarah Jenkins, MD")
+    encounter_id: str = Field(default="#ENC-9082-TX")
+    action: str = Field(default="APPROVE")
+    notes: Optional[str] = Field(default="Physician digitally reviewed contraindications and verified clinical safety.")
+
 @app.get("/")
 def main():
-    return {"message": "Hello World"}
+    return {"message": "MedGraph Clinical AI Backend Online"}
 
 @app.get("/api/health")
 async def health():
@@ -48,8 +49,9 @@ async def health():
         "infrastructure": "AMD ROCm Cloud + FalkorDB Graph Database",
         "active_agents": [
             "1. pii_guard_node",
-            "2. graph_reasoning_node (FalkorDB Multi-Hop)",
-            "3. gemma_clinical_node (Gemma-4-31B-IT)"
+            "2. graph_reasoning_node (FalkorDB Multi-Hop 5-Hop Traversal)",
+            "3. gemma_clinical_node (Gemma-4-31B-IT)",
+            "4. audit_signoff_writeback_node (FalkorDB Closed-Loop)"
         ]
     }
 
@@ -89,3 +91,39 @@ async def execute_analysis_api(req: EncounterInput):
         }
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Pipeline Error: {str(e)}")
+
+@app.post("/api/sign-off")
+async def physician_sign_off(req: SignOffInput):
+    """FalkorDB Closed-Loop AuditLog Node write-back (Track 2 & Track 3)."""
+    try:
+        now_ts = time.strftime("%Y-%m-%d %H:%M:%S")
+        res = graph.query("""
+        MERGE (d:Doctor {name: $doc})
+        MERGE (enc:Encounter {id: $enc_id})
+        CREATE (a:AuditLog {
+            action: $action,
+            timestamp: $ts,
+            notes: $notes
+        })
+        MERGE (d)-[:SIGNED_OFF {action: $action, timestamp: $ts}]->(enc)
+        MERGE (enc)-[:HAS_AUDIT]->(a)
+        RETURN d.name, enc.id, a.action, a.timestamp
+        """, {
+            "doc": req.doctor_name,
+            "enc_id": req.encounter_id,
+            "action": req.action,
+            "ts": now_ts,
+            "notes": req.notes
+        })
+        return {
+            "status": "success",
+            "message": f"Closed-loop physician audit log recorded in FalkorDB: {req.doctor_name} -> {req.action} on {req.encounter_id}",
+            "audit": {
+                "doctor": req.doctor_name,
+                "encounter": req.encounter_id,
+                "action": req.action,
+                "timestamp": now_ts
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Audit writeback error: {str(e)}")

@@ -27,15 +27,37 @@ gemma_clinical_llm = ChatOpenAI(
 db = FalkorDB(host='localhost', port=6379)
 graph = db.select_graph("medgraph_hospital_brain")
 
-# Ensure baseline knowledge graph is seeded
+# Ensure advanced multi-specialty clinical knowledge graph is seeded
 graph.query("""
-MERGE (w:Medication {name: 'Warfarin'})
-MERGE (a:Medication {name: 'Aspirin'})
-MERGE (mech:BiologicalPathway {name: 'Platelet Aggregation Pathway'})
-MERGE (risk:ClinicalRisk {name: 'Major Bleeding & Hemorrhage', severity: 'CRITICAL'})
-MERGE (w)-[:MODULATES]->(mech)
-MERGE (a)-[:INHIBITS]->(mech)
-MERGE (mech)-[:TRIGGERS_RISK]->(risk)
+MERGE (d1:Doctor {name: 'Dr. Sarah Jenkins, MD', dept: 'Cardiology'})
+MERGE (d2:Doctor {name: 'Dr. Rajeev Menon, MD', dept: 'Nephrology'})
+
+MERGE (w:Medication {name: 'Warfarin', class: 'Anticoagulant'})
+MERGE (a:Medication {name: 'Aspirin', class: 'Antiplatelet'})
+MERGE (li:Medication {name: 'Lisinopril', class: 'ACE Inhibitor'})
+MERGE (sp:Medication {name: 'Spironolactone', class: 'K-Sparing Diuretic'})
+MERGE (ib:Medication {name: 'Ibuprofen', class: 'NSAID'})
+MERGE (at:Medication {name: 'Atorvastatin', class: 'Statin'})
+
+MERGE (alt1:Alternative {name: 'Acetaminophen (Paracetamol) or Low-Dose Aspirin 81mg + Pantoprazole 40mg', rationale: 'Bypasses COX-1 mucosal toxicity or shields gastric mucosa'})
+MERGE (alt2:Alternative {name: 'Hold Ibuprofen & Monitor Serum Potassium (K+) + Creatinine in 24h', rationale: 'Prevents acute eGFR drop and hyperkalemic arrhythmia'})
+
+MERGE (p1:BiologicalPathway {name: 'Dual Hemostatic Inhibition (VKORC1 + COX-1 Platelet Aggregation)'})
+MERGE (r1:ClinicalRisk {name: 'Major Systemic & Intracranial Hemorrhage', severity: 'CRITICAL'})
+
+MERGE (p2:BiologicalPathway {name: 'Efferent Arteriole Constriction + Distal Tubular K+ Retention'})
+MERGE (r2:ClinicalRisk {name: 'Severe Hyperkalemia & Acute Kidney Injury (AKI)', severity: 'CRITICAL'})
+
+MERGE (w)-[:INTERACTS_WITH]->(a)
+MERGE (a)-[:TRIGGERS_PATHWAY]->(p1)-[:CAUSES_RISK]->(r1)
+MERGE (r1)-[:RECOMMENDED_ALTERNATIVE]->(alt1)
+MERGE (r1)-[:ESCALATE_TO]->(d1)
+
+MERGE (li)-[:INTERACTS_WITH]->(ib)
+MERGE (sp)-[:INTERACTS_WITH]->(ib)
+MERGE (ib)-[:TRIGGERS_PATHWAY]->(p2)-[:CAUSES_RISK]->(r2)
+MERGE (r2)-[:RECOMMENDED_ALTERNATIVE]->(alt2)
+MERGE (r2)-[:ESCALATE_TO]->(d2)
 """)
 
 
@@ -68,28 +90,51 @@ async def pii_guard_node(state: MedGraphState) -> dict:
 
 
 async def graph_reasoning_node(state: MedGraphState) -> dict:
-    """Agent 2: FalkorDB Multi-Hop Graph Traversal Node (Track 1 & 3)."""
+    """Advanced Multi-Hop Graph Traversal: DDI + Pathway + Safe Alternative + Specialist Escalation."""
     t0 = time.perf_counter()
+    notes_lower = state["sanitized_notes"].lower()
 
-    # Run the exact multi-hop query that just passed successfully
-    res = graph.query("""
-    MATCH (m1:Medication {name: 'Warfarin'})-[:MODULATES]->(p:BiologicalPathway)<-[:INHIBITS]-(m2:Medication {name: 'Aspirin'})
-    MATCH (p)-[:TRIGGERS_RISK]->(r:ClinicalRisk)
-    RETURN m1.name, m2.name, p.name, r.name, r.severity
-    """)
+    # Dynamically detect any seeded medications present in the doctor's note
+    candidate_drugs = ["Warfarin", "Aspirin", "Lisinopril", "Spironolactone", "Ibuprofen", "Atorvastatin"]
+    detected_drugs = [d for d in candidate_drugs if d.lower() in notes_lower]
 
     paths = []
-    for row in res.result_set:
+    if len(detected_drugs) >= 2:
+        res = graph.query("""
+        MATCH (m1:Medication)-[:INTERACTS_WITH]->(m2:Medication)-[:TRIGGERS_PATHWAY]->(p:BiologicalPathway)-[:CAUSES_RISK]->(r:ClinicalRisk)
+        WHERE m1.name IN $drugs AND m2.name IN $drugs
+        OPTIONAL MATCH (r)-[:RECOMMENDED_ALTERNATIVE]->(alt:Alternative)
+        OPTIONAL MATCH (r)-[:ESCALATE_TO]->(doc:Doctor)
+        RETURN m1.name, m2.name, p.name, r.name, r.severity, alt.name, doc.name, doc.dept
+        """, {"drugs": detected_drugs})
+
+        for row in res.result_set:
+            d1, d2, pathway, risk, sev, alt, doc, dept = row
+            paths.append({
+                "path": f"({d1} + {d2}) ➔ ({pathway}) ➔ ⚠️ [{risk} | {sev}] ➔ 💡 Safe Swap: [{alt}] ➔ 👨‍⚕️ Escalate: {doc} ({dept})",
+                "risk": risk,
+                "severity": sev,
+                "safe_alternative": alt,
+                "specialist": f"{doc} ({dept})"
+            })
+
+    if not paths:
         paths.append({
-            "path": f"({row[0]} + {row[1]}) ➔ ({row[2]}) ➔ ⚠️ [{row[3]} | Severity: {row[4]}]",
-            "risk": row[3],
-            "severity": row[4]
+            "path": f"({', '.join(detected_drugs) if detected_drugs else 'Triage Vitals & History'}) ➔ FalkorDB Protocol Graph ➔ ✅ [No Contraindicated Drug Pairs Found]",
+            "risk": "Low / Diagnostic Workup Only",
+            "severity": "MODERATE",
+            "safe_alternative": "Proceed with standard diagnostic protocol",
+            "specialist": "Dr. Sarah Jenkins, MD (Cardiology)"
         })
 
     latency = int((time.perf_counter() - t0) * 1000)
     return {
         "graph_paths": paths,
-        "agent_trace": state.get("agent_trace", []) + [{"agent": "FalkorDB_Graph_Traversal", "latency_ms": latency}]
+        "agent_trace": state.get("agent_trace", []) + [{
+            "agent": "FalkorDB_Graph_Traversal",
+            "latency_ms": latency,
+            "drugs_evaluated": detected_drugs
+        }]
     }
 
 
@@ -98,12 +143,13 @@ async def gemma_clinical_node(state: MedGraphState) -> dict:
     t0 = time.perf_counter()
 
     graph_context = "\n".join([p["path"] for p in state.get("graph_paths", [])])
+    has_critical_risk = any(p.get("severity") == "CRITICAL" for p in state.get("graph_paths", []))
 
     prompt = f"""You are the Clinical Safety Agent running on AMD ROCm (Gemma-4-31B-IT).
-Here is the multi-hop graph reasoning path from FalkorDB regarding the patient's medications:
+Here is the multi-hop graph reasoning path from FalkorDB regarding the patient's medications and safe alternatives:
 {graph_context}
 
-Analyze these clinical notes and provide a professional clinical risk assessment with clear headings and safety warnings:
+Analyze these clinical notes and provide a professional clinical risk assessment with clear headings, recommended safe alternatives, and safety warnings:
 Notes: {state['sanitized_notes']}"""
 
     response = await gemma_clinical_llm.ainvoke(prompt)
@@ -111,7 +157,7 @@ Notes: {state['sanitized_notes']}"""
 
     return {
         "llm_analysis": response.content,
-        "requires_physician_lock": True,  # High risk DDI detected
+        "requires_physician_lock": has_critical_risk,
         "agent_trace": state.get("agent_trace", []) + [{"agent": "Gemma_Clinical_Agent", "latency_ms": latency}]
     }
 
