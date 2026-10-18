@@ -1,0 +1,34 @@
+import type { Metadata } from 'next';
+import Providers from './providers';
+import './globals.css';
+
+export const metadata: Metadata = {
+  title: 'MedGraph Clinical AI - Clinical Triage',
+  description: 'Dual-LLM Pipeline on AMD ROCm Cloud & FalkorDB Graph Database',
+};
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="en">
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link
+          rel="preconnect"
+          href="https://fonts.gstatic.com"
+          crossOrigin="anonymous"
+        />
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;600;700&display=swap"
+        />
+      </head>
+      <body style={{ margin: 0, padding: 0, backgroundColor: '#f8fafc' }}>
+        <Providers>{children}</Providers>
+      </body>
+    </html>
+  );
+}
