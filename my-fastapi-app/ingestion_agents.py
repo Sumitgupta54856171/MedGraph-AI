@@ -17,7 +17,7 @@ load_dotenv()
 AMD_API_KEY = os.getenv("AMD_API_KEY")
 AMD_BASE_URL = os.getenv("AMD_BASE_URL", "https://notebooks.amd.com/tokenfactory/api/v1")
 
-# Initialize LLM for PDF extraction
+# Initialize LLM for PDF extraction (using AMD ROCm Gemma-4-31B-IT)
 gemma_llm = ChatOpenAI(
     model="Gemma-4-31B-IT",
     api_key=AMD_API_KEY,

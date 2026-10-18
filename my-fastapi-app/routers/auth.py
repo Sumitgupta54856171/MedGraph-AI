@@ -13,75 +13,83 @@ router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 class SignupRequest(BaseModel):
     name: str = Field(..., min_length=2, max_length=100)
     email: EmailStr
+    mobile: str = Field(..., min_length=10, max_length=15, description="Mobile number")
     password: str = Field(..., min_length=6, max_length=50)
     role: UserRole
     department: Optional[str] = Field(None, max_length=100)  # For doctors
-    mrn: Optional[str] = Field(None, max_length=20)  # For patients
+    note: Optional[str] = Field(None, max_length=500, description="Reason/Note for doctors")
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    email: Optional[EmailStr] = None
+    mobile: Optional[str] = None
     password: str
 
 
 class UserResponse(BaseModel):
     id: int
     name: str
-    email: str
+    email: Optional[str]
+    mobile: str
     role: UserRole
     department: Optional[str]
     mrn: Optional[str]
+    note: Optional[str]
     token: str
 
 
 @router.post("/signup", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def signup(req: SignupRequest, db: Session = Depends(get_db)):
-    """Register a new Doctor or Patient."""
-    # Validate role-specific fields
-    if req.role == UserRole.DOCTOR and not req.department:
+    """Register a new Doctor (patients cannot signup)."""
+    # Only doctors can signup
+    if req.role != UserRole.DOCTOR:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only doctors can signup. Patients are registered by doctors."
+        )
+
+    # Validate doctor-specific fields
+    if not req.department:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Department is required for doctors"
         )
-    if req.role == UserRole.PATIENT and not req.mrn:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="MRN is required for patients"
-        )
 
     # Check if email already exists
-    existing_user = db.query(User).filter(User.email == req.email).first()
-    if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered"
-        )
-
-    # Check if MRN already exists (for patients)
-    if req.mrn:
-        existing_mrn = db.query(User).filter(User.mrn == req.mrn).first()
-        if existing_mrn:
+    if req.email:
+        existing_email = db.query(User).filter(User.email == req.email).first()
+        if existing_email:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="MRN already registered"
+                detail="Email already registered"
             )
 
-    # Validate MRN format (e.g., PT-8491)
-    if req.mrn and not re.match(r'^PT-\d{4,6}$', req.mrn):
+    # Check if mobile already exists
+    existing_mobile = db.query(User).filter(User.mobile == req.mobile).first()
+    if existing_mobile:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="MRN must be in format PT-XXXX (e.g., PT-8491)"
+            detail="Mobile number already registered"
         )
 
-    # Create new user
+    # Validate mobile format (10 digits)
+    if not re.match(r'^\d{10}$', req.mobile):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Mobile number must be 10 digits"
+        )
+
+    # Create new doctor
     hashed_password = get_password_hash(req.password)
     new_user = User(
         name=req.name,
         email=req.email,
+        mobile=req.mobile,
         password_hash=hashed_password,
-        role=req.role,
-        department=req.department if req.role == UserRole.DOCTOR else None,
-        mrn=req.mrn if req.role == UserRole.PATIENT else None
+        role=UserRole.DOCTOR,
+        department=req.department,
+        mrn=None,
+        note=req.note
     )
 
     db.add(new_user)
@@ -92,6 +100,7 @@ async def signup(req: SignupRequest, db: Session = Depends(get_db)):
     token_data = {
         "sub": str(new_user.id),
         "email": new_user.email,
+        "mobile": new_user.mobile,
         "role": new_user.role.value
     }
     access_token = create_access_token(token_data)
@@ -100,35 +109,47 @@ async def signup(req: SignupRequest, db: Session = Depends(get_db)):
         id=new_user.id,
         name=new_user.name,
         email=new_user.email,
+        mobile=new_user.mobile,
         role=new_user.role,
         department=new_user.department,
         mrn=new_user.mrn,
+        note=new_user.note,
         token=access_token
     )
 
 
 @router.post("/login", response_model=UserResponse)
 async def login(req: LoginRequest, db: Session = Depends(get_db)):
-    """Verify credentials and return user profile with token."""
-    # Find user by email
-    user = db.query(User).filter(User.email == req.email).first()
+    """Verify credentials (email or mobile) and return user profile with token."""
+    # Find user by email or mobile
+    if req.email:
+        user = db.query(User).filter(User.email == req.email).first()
+    elif req.mobile:
+        user = db.query(User).filter(User.mobile == req.mobile).first()
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email or mobile number required"
+        )
+
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password"
+            detail="Invalid credentials"
         )
 
     # Verify password
     if not verify_password(req.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password"
+            detail="Invalid credentials"
         )
 
     # Generate JWT token
     token_data = {
         "sub": str(user.id),
         "email": user.email,
+        "mobile": user.mobile,
         "role": user.role.value
     }
     access_token = create_access_token(token_data)
@@ -137,8 +158,10 @@ async def login(req: LoginRequest, db: Session = Depends(get_db)):
         id=user.id,
         name=user.name,
         email=user.email,
+        mobile=user.mobile,
         role=user.role,
         department=user.department,
         mrn=user.mrn,
+        note=user.note,
         token=access_token
     )

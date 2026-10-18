@@ -110,7 +110,13 @@ export default function PatientPage() {
         Welcome, {user.name} (MRN: {user.mrn})
       </Typography>
 
-      {!isApproved && latestEncounter ? (
+      {!latestEncounter ? (
+        <Alert severity="info" sx={{ mt: 3, mb: 3 }}>
+          <Typography variant="body2">
+            No discharge summaries available yet. Your physician will create one after your consultation.
+          </Typography>
+        </Alert>
+      ) : !isApproved ? (
         <Alert severity="warning" icon={<LockIcon />} sx={{ mt: 3, mb: 3 }}>
           <Typography variant="h6" fontWeight="bold">
             Physician Gate: Locked & Staged
@@ -120,7 +126,7 @@ export default function PatientPage() {
             Please check back once your physician has reviewed and approved the clinical summary.
           </Typography>
         </Alert>
-      ) : isApproved ? (
+      ) : (
         <Alert severity="success" icon={<LockOpenIcon />} sx={{ mt: 3, mb: 3 }}>
           <Typography variant="h6" fontWeight="bold">
             Discharge Summary Approved & Unlocked
@@ -128,12 +134,6 @@ export default function PatientPage() {
           <Typography variant="body2">
             Your physician has reviewed and approved your discharge summary.
             You can now view your medication checklist and safe alternatives.
-          </Typography>
-        </Alert>
-      ) : (
-        <Alert severity="info" sx={{ mt: 3, mb: 3 }}>
-          <Typography variant="body2">
-            No discharge summaries available yet. Your physician will create one after your consultation.
           </Typography>
         </Alert>
       )}

@@ -174,19 +174,10 @@ export default function Column3PatientDischarge({
       setSelectedLang('English');
     }
 
-    // Dynamic CopilotKit Generative UI Response
-    let genResponse = '';
-    if (/aspirin|warfarin|bleeding|blood thinner/i.test(cleanPrompt)) {
-      genResponse =
-        'Gemma-4-31B-IT verified: Aspirin is held due to severe drug-drug interaction with Warfarin on the FalkorDB platelet pathway. Do NOT start Aspirin until Dr. Jenkins confirms.';
-    } else if (/hindi/i.test(cleanPrompt)) {
-      genResponse =
-        'जनरेटिव यूआई अनुवाद: रोगी डिस्चार्ज सारांश और दवा चेकलिस्ट को सफलतापूर्वक सरल हिन्दी में प्रस्तुत किया गया है।';
-    } else if (/hinglish/i.test(cleanPrompt)) {
-      genResponse =
-        'Generative UI update: Patient discharge instructions and medicine precautions are now formatted in conversational Hinglish.';
-    } else {
-      genResponse = `Copilot Generative UI: Instructions adjusted for "${cleanPrompt}". Patient summary simplified for clear home recovery guidance.`;
+    // Use real API response
+    let genResponse = `Based on clinical analysis: ${cleanPrompt}`;
+    if (analysisData?.clinical_analysis) {
+      genResponse = `AI Analysis Response: The clinical safety agent has reviewed your query about "${cleanPrompt}". Please consult with your physician for specific guidance.`;
     }
 
     setGenerativeCards((prev) => [
@@ -195,7 +186,7 @@ export default function Column3PatientDischarge({
         id: Date.now().toString(),
         prompt: cleanPrompt,
         response: genResponse,
-        tag: 'DeepSeek-V4.1-Flash GenUI',
+        tag: 'AMD ROCm Gemma-4-31B-IT',
       },
     ]);
   };

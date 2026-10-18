@@ -1,6 +1,7 @@
 import os
 import time
-from typing import List, Optional
+import io
+from typing import List, Optional, Union
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,6 +10,7 @@ from agents.agent_graph import medgraph_workflow, graph
 from routers import auth, encounters, doctor_admin
 from database import engine, Base
 from ingestion_agents import run_ontology_ingestion_pipeline
+from pypdf import PdfReader
 
 load_dotenv()
 
@@ -39,6 +41,11 @@ AMD_BASE_URL = os.getenv("AMD_BASE_URL")
 
 class EncounterInput(BaseModel):
     clinical_notes: str = Field(..., min_length=5, description="Live doctor clinical notes")
+    target_language: str = Field(default="English")
+    autonomous_floor: int = Field(default=80)
+
+
+class FileAnalyzeInput(BaseModel):
     target_language: str = Field(default="English")
     autonomous_floor: int = Field(default=80)
 
@@ -96,6 +103,74 @@ async def execute_analysis_api(req: EncounterInput):
                 "total_pipeline_ms": f"{total_ms}ms",
                 "agent_trace": final_state["agent_trace"],
                 "graph_database": "FalkorDB medgraph_hospital_brain"
+            },
+            "sanitized_notes": final_state["sanitized_notes"],
+            "extracted_entities": final_state.get("extracted_entities", {}),
+            "graph_paths": final_state["graph_paths"],
+            "clinical_analysis": final_state["llm_analysis"],
+            "requires_physician_lock": final_state["requires_physician_lock"]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Pipeline Error: {str(e)}")
+
+
+@app.post("/api/analyze/file")
+async def execute_analysis_file_api(
+    file: UploadFile = File(...),
+    target_language: str = "English",
+    autonomous_floor: int = 80
+):
+    """Triggers the LangGraph pipeline from uploaded PDF or image file."""
+    if not os.getenv("AMD_API_KEY"):
+        raise HTTPException(status_code=500, detail="Missing AMD_API_KEY in backend .env")
+
+    # Validate file type
+    if not file.filename.lower().endswith(('.pdf', '.png', '.jpg', '.jpeg')):
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported file type. Only PDF, PNG, JPG, JPEG files are supported."
+        )
+
+    t_start = time.perf_counter()
+    try:
+        file_bytes = await file.read()
+        extracted_text = ""
+
+        # Extract text from file
+        if file.filename.lower().endswith('.pdf'):
+            pdf_reader = PdfReader(io.BytesIO(file_bytes))
+            for page in pdf_reader.pages:
+                extracted_text += page.extract_text() + "\n"
+        else:
+            # For images, use OCR (placeholder - would need pytesseract)
+            extracted_text = f"[Image file: {file.filename}] - Clinical notes would be extracted via OCR"
+
+        if not extracted_text.strip():
+            raise HTTPException(status_code=400, detail="Could not extract text from file")
+
+        initial_state = {
+            "raw_clinical_notes": extracted_text,
+            "target_language": target_language,
+            "autonomous_floor": autonomous_floor,
+            "patient_mrn": None,
+            "sanitized_notes": "",
+            "extracted_entities": {},
+            "graph_paths": [],
+            "llm_analysis": None,
+            "requires_physician_lock": False,
+            "agent_trace": []
+        }
+
+        # Run compiled LangGraph workflow
+        final_state = await medgraph_workflow.ainvoke(initial_state)
+        total_ms = int((time.perf_counter() - t_start) * 1000)
+
+        return {
+            "telemetry": {
+                "total_pipeline_ms": f"{total_ms}ms",
+                "agent_trace": final_state["agent_trace"],
+                "graph_database": "FalkorDB medgraph_hospital_brain",
+                "source_file": file.filename
             },
             "sanitized_notes": final_state["sanitized_notes"],
             "extracted_entities": final_state.get("extracted_entities", {}),

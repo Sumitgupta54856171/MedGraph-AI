@@ -27,31 +27,35 @@ def init_db():
             demo_doctor = User(
                 name="Dr. Sarah Jenkins, MD",
                 email="sarah.jenkins@medgraph.ai",
+                mobile="9876543210",
                 password_hash=get_password_hash("doctor123"),
                 role=UserRole.DOCTOR,
                 department="Cardiology",
-                mrn=None
+                mrn=None,
+                note="Senior Cardiologist specializing in anticoagulation therapy"
             )
             db.add(demo_doctor)
             logger.info("Demo doctor account created: sarah.jenkins@medgraph.ai")
         else:
             logger.info("Demo doctor account already exists: sarah.jenkins@medgraph.ai")
 
-        # Check if demo patient exists
-        existing_patient = db.query(User).filter(User.email == "m.reyes@patient.ai").first()
+        # Check if demo patient exists (using mobile as login)
+        existing_patient = db.query(User).filter(User.mobile == "1234567890").first()
         if not existing_patient:
             demo_patient = User(
                 name="M. Reyes",
-                email="m.reyes@patient.ai",
-                password_hash=get_password_hash("patient123"),
+                email=None,
+                mobile="1234567890",
+                password_hash=get_password_hash("1234567890"),  # Mobile is password
                 role=UserRole.PATIENT,
                 department=None,
-                mrn="PT-8491"
+                mrn="PT-8491",
+                note=None
             )
             db.add(demo_patient)
-            logger.info("Demo patient account created: m.reyes@patient.ai")
+            logger.info("Demo patient account created: 1234567890")
         else:
-            logger.info("Demo patient account already exists: m.reyes@patient.ai")
+            logger.info("Demo patient account already exists: 1234567890")
 
         db.commit()
         logger.info("Database initialization completed successfully.")

@@ -9,16 +9,20 @@ import {
   TextField,
   Chip,
   CircularProgress,
+  Alert,
 } from '@mui/material';
 import MicIcon from '@mui/icons-material/Mic';
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import SecurityIcon from '@mui/icons-material/Security';
 import BoltIcon from '@mui/icons-material/Bolt';
+import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+import axios from 'axios';
 
 interface Column1Props {
   clinicalNotes: string;
   onChangeNotes: (notes: string) => void;
   onRunAnalysis: () => void;
+  onRunFileAnalysis: (file: File) => void;
   isAnalyzing: boolean;
   onSelectCase: (caseId: number) => void;
   selectedCaseId: number;
@@ -28,14 +32,24 @@ export default function Column1RawClinical({
   clinicalNotes,
   onChangeNotes,
   onRunAnalysis,
+  onRunFileAnalysis,
   isAnalyzing,
   onSelectCase,
   selectedCaseId,
 }: Column1Props) {
   const [isRecording, setIsRecording] = useState(false);
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
 
   const toggleMic = () => {
     setIsRecording(!isRecording);
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setUploadedFile(file);
+      onRunFileAnalysis(file);
+    }
   };
 
   return (
@@ -238,6 +252,50 @@ export default function Column1RawClinical({
             },
           }}
         />
+
+        {/* File Upload Section */}
+        <Box sx={{ mt: 2 }}>
+          <Typography
+            variant="caption"
+            sx={{
+              fontWeight: 700,
+              color: '#64748b',
+              letterSpacing: '0.05em',
+              fontSize: '0.7rem',
+              display: 'block',
+              mb: 0.8,
+              textTransform: 'uppercase',
+            }}
+          >
+            Upload Clinical Document (PDF/Image)
+          </Typography>
+          <Box
+            sx={{
+              border: '2px dashed #cbd5e1',
+              borderRadius: 2,
+              p: 3,
+              textAlign: 'center',
+              cursor: 'pointer',
+              '&:hover': {
+                borderColor: '#0284c7',
+                backgroundColor: '#f0f9ff',
+              },
+            }}
+            onClick={() => document.getElementById('file-upload')?.click()}
+          >
+            <CloudUploadIcon sx={{ fontSize: 32, color: '#64748b', mb: 1 }} />
+            <Typography variant="body2" color="text.secondary">
+              {uploadedFile ? uploadedFile.name : 'Click to upload PDF or image'}
+            </Typography>
+            <input
+              id="file-upload"
+              type="file"
+              accept=".pdf,.png,.jpg,.jpeg"
+              style={{ display: 'none' }}
+              onChange={handleFileUpload}
+            />
+          </Box>
+        </Box>
 
         {/* Notes Footer */}
         <Box

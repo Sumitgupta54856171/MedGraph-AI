@@ -34,6 +34,63 @@ class EncounterResponse(BaseModel):
     updated_at: str
 
 
+class CreateEncounterRequest(BaseModel):
+    patient_mrn: str = Field(..., description="Patient MRN")
+    doctor_id: int = Field(..., description="Doctor ID")
+    raw_notes: str = Field(..., description="Raw clinical notes")
+    sanitized_notes: Optional[str] = Field(None, description="Sanitized notes (PII masked)")
+    clinical_analysis: Optional[str] = Field(None, description="Clinical analysis result")
+    status: EncounterStatus = Field(default=EncounterStatus.LOCKED_PENDING_REVIEW)
+
+
+@router.post("/create", status_code=status.HTTP_201_CREATED)
+async def create_encounter(req: CreateEncounterRequest, db: Session = Depends(get_db)):
+    """Create a new encounter in PostgreSQL."""
+    # Verify doctor exists
+    doctor = db.query(User).filter(User.id == req.doctor_id, User.role == "DOCTOR").first()
+    if not doctor:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Doctor not found"
+        )
+
+    # Generate encounter ID
+    encounter_id = f"ENC-{int(time.time() * 1000)}"
+
+    # Create encounter
+    new_encounter = Encounter(
+        id=encounter_id,
+        patient_mrn=req.patient_mrn,
+        doctor_id=req.doctor_id,
+        raw_notes=req.raw_notes,
+        sanitized_notes=req.sanitized_notes,
+        clinical_analysis=req.clinical_analysis,
+        status=req.status,
+        approved_by=None
+    )
+
+    db.add(new_encounter)
+    db.commit()
+    db.refresh(new_encounter)
+
+    return {
+        "status": "success",
+        "message": f"Encounter {encounter_id} created successfully",
+        "encounter_id": encounter_id,
+        "data": EncounterResponse(
+            id=new_encounter.id,
+            patient_mrn=new_encounter.patient_mrn,
+            doctor_id=new_encounter.doctor_id,
+            raw_notes=new_encounter.raw_notes,
+            sanitized_notes=new_encounter.sanitized_notes,
+            clinical_analysis=new_encounter.clinical_analysis,
+            status=new_encounter.status,
+            approved_by=new_encounter.approved_by,
+            updated_at=new_encounter.updated_at.isoformat()
+        )
+    }
+
+
 @router.post("/approve", status_code=status.HTTP_200_OK)
 async def approve_encounter(req: ApproveRequest, db: Session = Depends(get_db)):
     """Layer 3: Cross-Session Episodic Memory & Physician Decision Logging."""

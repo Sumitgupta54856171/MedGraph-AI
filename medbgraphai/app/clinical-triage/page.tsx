@@ -24,12 +24,12 @@ import { authService, User } from '../../services/auth';
 import axios from 'axios';
 
 const DEFAULT_CLINICAL_NOTES =
-  'Pt 58M c/o acute substernal CP radiating to L arm. Hx of AFib on Warfarin 5mg. Prescribed Aspirin 325mg daily + Atorvastatin 40mg. Discharge home w/ follow-up in 48h.';
+  'Enter clinical notes here...';
 
 const CASE_PRESETS: Record<number, string> = {
-  1: 'Pt 58M c/o acute substernal CP radiating to L arm. Hx of AFib on Warfarin 5mg. Prescribed Aspirin 325mg daily + Atorvastatin 40mg. Discharge home w/ follow-up in 48h.',
-  2: 'Pt 64F with chronic AFib taking Warfarin 5mg daily. Presented with severe osteoarthritis flare. Prescribed high-dose NSAID daily. High DDI risk assessment requested.',
-  3: 'Pt 42M with atypical non-cardiac chest discomfort after exertion. No history of anticoagulants. Routine cardiac workup and outpatient treadmill follow-up.',
+  1: 'Enter clinical notes for patient...',
+  2: 'Enter clinical notes for patient...',
+  3: 'Enter clinical notes for patient...',
 };
 
 export default function ClinicalTriagePage() {
@@ -74,9 +74,21 @@ export default function ClinicalTriagePage() {
     }
 
     try {
-      const encounterId = `ENC-${Date.now()}`;
       const patientMrn = 'PT-8491';
 
+      // First create the encounter in PostgreSQL
+      const createResponse = await axios.post(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/encounter/create`, {
+        patient_mrn: patientMrn,
+        doctor_id: user.id,
+        raw_notes: clinicalNotes,
+        sanitized_notes: analysisResult?.sanitized_notes || clinicalNotes,
+        clinical_analysis: analysisResult?.clinical_analysis || '',
+        status: 'LOCKED_PENDING_REVIEW',
+      });
+
+      const encounterId = createResponse.data.encounter_id;
+
+      // Then approve it
       await axios.post(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/encounter/approve`, {
         encounter_id: encounterId,
         doctor_name: user.name,
@@ -88,7 +100,7 @@ export default function ClinicalTriagePage() {
       setIsPhysicianApproved(true);
       setSnackbar({
         open: true,
-        message: `Encounter approved by ${user.name}. Decision logged in FalkorDB.`,
+        message: `Encounter ${encounterId} created and approved by ${user.name}. Decision logged in FalkorDB.`,
         severity: 'success',
       });
     } catch (err: any) {
@@ -170,6 +182,37 @@ export default function ClinicalTriagePage() {
     });
   };
 
+  const handleRunFileAnalysis = async (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const response = await axios.post(
+        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/analyze/file`,
+        formData,
+        {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        }
+      );
+
+      setAnalysisResult(response.data);
+      setIsPhysicianApproved(false);
+      setSnackbar({
+        open: true,
+        message: `File analysis completed in ${response.data.telemetry.total_pipeline_ms}!`,
+        severity: 'success',
+      });
+    } catch (err: any) {
+      setSnackbar({
+        open: true,
+        message: `File analysis failed: ${err.response?.data?.detail || 'Server error'}`,
+        severity: 'error',
+      });
+    }
+  };
+
   return (
     <Box
       sx={{
@@ -223,6 +266,7 @@ export default function ClinicalTriagePage() {
             clinicalNotes={clinicalNotes}
             onChangeNotes={setClinicalNotes}
             onRunAnalysis={handleRunAnalysis}
+            onRunFileAnalysis={handleRunFileAnalysis}
             isAnalyzing={analyzeMutation.isPending}
             onSelectCase={handleSelectCase}
             selectedCaseId={selectedCaseId}

@@ -5,25 +5,29 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 export interface User {
   id: number;
   name: string;
-  email: string;
+  email?: string;
+  mobile: string;
   role: 'DOCTOR' | 'PATIENT';
   department?: string;
   mrn?: string;
+  note?: string;
   token: string;
 }
 
 export interface LoginRequest {
-  email: string;
+  email?: string;
+  mobile?: string;
   password: string;
 }
 
 export interface SignupRequest {
   name: string;
-  email: string;
+  email?: string;
+  mobile: string;
   password: string;
   role: 'DOCTOR' | 'PATIENT';
   department?: string;
-  mrn?: string;
+  note?: string;
 }
 
 export const authService = {
